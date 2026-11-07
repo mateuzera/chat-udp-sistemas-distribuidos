@@ -5,7 +5,6 @@ HOST = '127.0.0.1'
 PORT = 5000
 MAX_HISTORICO = 10
 
-
 clientes = {}  
 historico = []
 trava = threading.Lock()
@@ -34,8 +33,13 @@ def iniciar_servidor():
     
     try:
         while True:
-            # recvfrom retorna os dados e o endereco (ip, porta) de quem enviou.
-            dados, endereco = servidor.recvfrom(1024)
+            try:
+                # recvfrom retorna os dados e o endereco (ip, porta) de quem enviou.
+                dados, endereco = servidor.recvfrom(1024)
+            except ConnectionResetError:
+                # Evita queda no Windows quando um cliente fecha a porta UDP abruptamente
+                continue
+
             mensagem = dados.decode('utf-8').strip()
             
             if not mensagem:
@@ -47,6 +51,10 @@ def iniciar_servidor():
 
             with trava:
                 if comando == "CONNECT":
+                    if not argumento:
+                        servidor.sendto("[ERRO] Informe um nome. Uso: CONNECT <nome_usuario>\n".encode('utf-8'), endereco)
+                        continue
+
                     if endereco not in clientes:
                         clientes[endereco] = argumento
                         servidor.sendto(f"[SERVIDOR] Bem-vindo(a), {argumento}!\n".encode('utf-8'), endereco)
@@ -65,6 +73,10 @@ def iniciar_servidor():
 
                 elif comando == "SEND":
                     if endereco in clientes:
+                        if not argumento:
+                            servidor.sendto("[ERRO] Mensagem vazia. Uso: SEND <mensagem>\n".encode('utf-8'), endereco)
+                            continue
+
                         nome_usuario = clientes[endereco]
                         msg_formatada = f"[{nome_usuario}]: {argumento}"
                         salvar_no_historico(msg_formatada)
@@ -79,8 +91,10 @@ def iniciar_servidor():
                         servidor.sendto("[SERVIDOR] Sessão encerrada.\n".encode('utf-8'), endereco)
                         print(f"[DESCONECTADO] {nome} ({endereco}) saiu.")
                         broadcast(servidor, f"[SERVIDOR] {nome} saiu da sala.")
+                    else:
+                        servidor.sendto("[ERRO] Não estás conectado na sala.\n".encode('utf-8'), endereco)
                 else:
-                    servidor.sendto("[ERRO] Comando inválido.\n".encode('utf-8'), endereco)
+                    servidor.sendto("[ERRO] Comando inválido. Use CONNECT, SEND ou DISCONNECT.\n".encode('utf-8'), endereco)
                 
     except KeyboardInterrupt:
         print("\n[ENCERRANDO] Servidor desligado.")
